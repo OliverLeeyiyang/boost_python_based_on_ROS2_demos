@@ -1,37 +1,54 @@
-/* #include <boost/python.hpp>
+#include <boost/python.hpp>
 #include <boost/archive/binary_iarchive.hpp>
-#include <boost/serialization/vector.hpp>
-#include <vector>
-#include <cstdint>
+#include <lanelet2_io/Io.h>
+#include "converter.h"
 
-boost::python::object deserializeVector(const std::vector<uint8_t>& message)
-{
-    // Convert the vector to a string
-    std::string strData(message.begin(), message.end());
+namespace py = boost::python;
+using namespace lanelet;
 
-    // Deserialize the string using boost_iarchive
-    std::istringstream iss(strData);
-    boost::archive::binary_iarchive ia(iss);
-
-    // Deserialize the vector
-    std::vector<int> data;
-    ia >> data;
-
-    // Convert the deserialized vector to a Python list
-    boost::python::list pyList;
-    for (const auto& value : data) {
-        pyList.append(value);
+struct DictToConfigurationConverter {
+  DictToConfigurationConverter() { py::converter::registry::push_back(&convertible, &construct, py::type_id<io::Configuration>()); }
+  static void* convertible(PyObject* obj) {
+    if (!PyDict_CheckExact(obj)) {  // NOLINT
+      return nullptr;
     }
+    return obj;
+  }
+  static void construct(PyObject* obj, py::converter::rvalue_from_python_stage1_data* data) {
+    py::dict d(py::borrowed(obj));
+    py::list keys = d.keys();
+    py::list values = d.values();
+    io::Configuration attributes;
+    for (auto i = 0u; i < py::len(keys); ++i) {
+      std::string key = py::extract<std::string>(keys[i]);
+      std::string value = py::extract<std::string>(values[i]);
+      attributes.insert(std::make_pair(key, value));
+    }
+    using StorageType = py::converter::rvalue_from_python_storage<io::Configuration>;
+    void* storage = reinterpret_cast<StorageType*>(data)->storage.bytes;  // NOLINT
+    new (storage) io::Configuration(attributes);
+    data->convertible = storage;
+  }
+};
 
-    // Return the Python list
-    return pyList;
+std::shared_ptr<LaneletMap> dealbinmsg(const std::string& data_str)
+{
+  std::shared_ptr<LaneletMap> map = std::make_shared<LaneletMap>();
+  std::stringstream ss;
+  ss << data_str;
+  boost::archive::binary_iarchive oa(ss);
+  oa >> *map;
+  lanelet::Id id_counter = 0;
+  oa >> id_counter;
+  lanelet::utils::registerId(id_counter);
+  return map;
 }
 
 BOOST_PYTHON_MODULE(example_module)
 {
     using namespace boost::python;
-    def("deserializeVector", deserializeVector);
-} */
+    def("dealbinmsg", dealbinmsg);
+}
 
 
 /* 
